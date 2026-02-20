@@ -1,68 +1,68 @@
-import { app, BrowserWindow } from 'electron'
-import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
-import path from 'node:path'
+import { app, BrowserWindow, ipcMain } from "electron";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const require = createRequire(import.meta.url)
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+import { initDatabase } from "./db/database";
+import { StampsRepository } from "./db/stamps.repository";
+import { CouponsRepository } from "./db/coupons.repository";
+import { CouponCellsRepository } from "./db/couponCells.repository";
+import { TagsRepository } from "./db/tags.repository";
 
-// The built directory structure
-//
-// ├─┬─┬ dist
-// │ │ └── index.html
-// │ │
-// │ ├─┬ dist-electron
-// │ │ ├── main.js
-// │ │ └── preload.mjs
-// │
-process.env.APP_ROOT = path.join(__dirname, '..')
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
-export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
-export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
-export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
+let win: BrowserWindow | null = null;
 
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
-
-let win: BrowserWindow | null
+// ⚠️ НЕ создаём репозитории здесь
+let stampsRepo: StampsRepository;
+let couponsRepo: CouponsRepository;
+let couponCellsRepo: CouponCellsRepository;
+let tagsRepo: TagsRepository;
 
 function createWindow() {
   win = new BrowserWindow({
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
+      preload: path.join(__dirname, "preload.mjs"),
     },
-  })
+  });
 
-  // Test active push message to Renderer-process.
-  win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', (new Date).toLocaleString())
-  })
-
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL)
-  } else {
-    // win.loadFile('dist/index.html')
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'))
-  }
+  win.loadURL(process.env.VITE_DEV_SERVER_URL!);
 }
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-    win = null
-  }
-})
+app.whenReady().then(() => {
+  // 1️⃣ СНАЧАЛА инициализация базы
+  initDatabase();
 
-app.on('activate', () => {
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
-  }
-})
+  // 2️⃣ Потом создаём репозитории
+  stampsRepo = new StampsRepository();
+  couponsRepo = new CouponsRepository();
+  couponCellsRepo = new CouponCellsRepository();
+  tagsRepo = new TagsRepository();
 
-app.whenReady().then(createWindow)
+  // 3️⃣ Потом регистрируем IPC
+  ipcMain.handle("coupons:getAll", () => couponsRepo.getAll());
+  ipcMain.handle(
+    "coupons:create",
+    (_e, title, cell_count, access_code, image_path) =>
+      couponsRepo.create(title, cell_count, access_code, image_path),
+  );
+
+  ipcMain.handle("stamps:getAll", () => stampsRepo.getAll());
+  ipcMain.handle("tags:getAll", () => tagsRepo.getAll());
+
+  ipcMain.handle("couponCells:getByCouponId", (e, id) =>
+    couponCellsRepo.getByCouponId(id),
+  );
+
+  ipcMain.handle("coupons:update", (_e, id, title, cell_count) =>
+    couponsRepo.update(id, title, cell_count),
+  );
+
+  ipcMain.handle("coupons:delete", (_e, id) => couponsRepo.delete(id));
+
+  ipcMain.handle("couponCells:create", (_e, coupon_id, index) =>
+    couponCellsRepo.create(coupon_id, index),
+  );
+
+  // 4️⃣ И только потом создаём окно
+  createWindow();
+});
