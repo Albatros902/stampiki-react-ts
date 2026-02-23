@@ -11,6 +11,7 @@ export function initDatabase() {
 
   db.pragma("foreign_keys = ON");
 
+  // !! Удалить, когда надо проверить БД
   if (process.env.NODE_ENV === "development") {
     db.exec(`DROP TABLE IF EXISTS coupons`);
     db.exec(`DROP TABLE IF EXISTS coupon_cells`);

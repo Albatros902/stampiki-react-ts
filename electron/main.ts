@@ -42,14 +42,26 @@ app.whenReady().then(() => {
   ipcMain.handle("coupons:getAll", () => couponsRepo.getAll());
   ipcMain.handle(
     "coupons:create",
-    (_e, title, cell_count, access_code, image_path) =>
-      couponsRepo.create(title, cell_count, access_code, image_path),
+    (_e, title, cell_count, access_code, image_path) => {
+      const coupon = couponsRepo.create(
+        title,
+        cell_count,
+        access_code,
+        image_path,
+      );
+
+      for (let i = 0; i < cell_count; i++) {
+        couponCellsRepo.create(coupon.id, i);
+      }
+
+      return coupon;
+    },
   );
 
   ipcMain.handle("stamps:getAll", () => stampsRepo.getAll());
   ipcMain.handle("tags:getAll", () => tagsRepo.getAll());
 
-  ipcMain.handle("couponCells:getByCouponId", (e, id) =>
+  ipcMain.handle("couponCells:getByCouponId", (_e, id) =>
     couponCellsRepo.getByCouponId(id),
   );
 
@@ -63,6 +75,28 @@ app.whenReady().then(() => {
     couponCellsRepo.create(coupon_id, index),
   );
 
-  // 4️⃣ И только потом создаём окно
+  ipcMain.handle("couponCells:setStamp", (_e, cell_id, stamp_id) =>
+    couponCellsRepo.setStamp(cell_id, stamp_id),
+  );
+
+  ipcMain.handle("couponCells:clearStamp", (_e, cell_id) =>
+    couponCellsRepo.clearStamp(cell_id),
+  );
+
+  ipcMain.handle("couponCells:delete", (_e, id) => couponCellsRepo.delete(id));
+
+  ipcMain.handle("coupons:updateStatus", (_e, id, status) =>
+    couponsRepo.updateStatus(id, status),
+  );
+
+  ipcMain.handle("coupons:use", (_e, id) => {
+    couponsRepo.delete(id);
+    return { success: true };
+  });
+
+  ipcMain.handle("coupons:verifyAccess", (_e, id, code) =>
+    couponsRepo.verifyAccess(id, code),
+  );
+
   createWindow();
 });

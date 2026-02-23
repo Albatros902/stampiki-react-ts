@@ -7,52 +7,50 @@ export class CouponCellsRepository {
     return this.db
       .prepare(
         `
-      SELECT * FROM coupon_cells
-      WHERE coupon_id = ?
-      ORDER BY id ASC
-    `,
+        SELECT * FROM coupon_cells
+        WHERE coupon_id = ?
+        ORDER BY position ASC
+      `,
       )
       .all(coupon_id);
   }
 
-  create(coupon_id: number, index: number) {
-    const stmt = this.db.prepare(`
-      INSERT INTO coupon_cells (coupon_id, cell_index, is_filled)
-      VALUES (?, ?, 0)
-    `);
-
-    return stmt.run(coupon_id, index);
-  }
-
-  markFilled(id: number) {
-    this.db
+  create(coupon_id: number, position: number) {
+    return this.db
       .prepare(
         `
-      UPDATE coupon_cells
-      SET is_filled = 1
-      WHERE id = ?
-    `,
+        INSERT INTO coupon_cells (coupon_id, position, stamp_id)
+        VALUES (?, ?, NULL)
+      `,
       )
-      .run(id);
+      .run(coupon_id, position);
   }
 
-  deleteByCouponId(coupon_id: number) {
-    this.db
+  setStamp(cell_id: number, stamp_id: number) {
+    return this.db
       .prepare(
         `
-      DELETE FROM coupon_cells WHERE coupon_id = ?
-    `,
+        UPDATE coupon_cells
+        SET stamp_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
       )
-      .run(coupon_id);
+      .run(stamp_id, cell_id);
+  }
+
+  clearStamp(cell_id: number) {
+    return this.db
+      .prepare(
+        `
+        UPDATE coupon_cells
+        SET stamp_id = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `,
+      )
+      .run(cell_id);
   }
 
   delete(id: number) {
-    this.db
-      .prepare(
-        `
-      DELETE FROM coupon_cells WHERE id = ?
-    `,
-      )
-      .run(id);
+    return this.db.prepare(`DELETE FROM coupon_cells WHERE id = ?`).run(id);
   }
 }

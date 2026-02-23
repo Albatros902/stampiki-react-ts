@@ -115,11 +115,8 @@ class CouponsRepository {
     ).all();
   }
   getById(id) {
-    return this.db.prepare(
-      `
-      SELECT * FROM coupons WHERE id = ?
-    `
-    ).get(id);
+    const coupon = this.db.prepare(`SELECT * FROM coupons WHERE id = ?`).get(id);
+    return coupon ?? null;
   }
   create(title, cell_count, access_code, image_path) {
     const stmt = this.db.prepare(`
@@ -148,6 +145,20 @@ class CouponsRepository {
     ).run(id);
     return { success: true };
   }
+  updateStatus(id, status) {
+    return this.db.prepare(
+      `
+      UPDATE coupons
+      SET status = ?
+      WHERE id = ?
+    `
+    ).run(status, id);
+  }
+  verifyAccess(id, code) {
+    const coupon = this.getById(id);
+    if (!coupon) return false;
+    return coupon.access_code === code;
+  }
 }
 class CouponCellsRepository {
   constructor() {
@@ -156,41 +167,40 @@ class CouponCellsRepository {
   getByCouponId(coupon_id) {
     return this.db.prepare(
       `
-      SELECT * FROM coupon_cells
-      WHERE coupon_id = ?
-      ORDER BY id ASC
-    `
+        SELECT * FROM coupon_cells
+        WHERE coupon_id = ?
+        ORDER BY position ASC
+      `
     ).all(coupon_id);
   }
-  create(coupon_id, index) {
-    const stmt = this.db.prepare(`
-      INSERT INTO coupon_cells (coupon_id, cell_index, is_filled)
-      VALUES (?, ?, 0)
-    `);
-    return stmt.run(coupon_id, index);
-  }
-  markFilled(id) {
-    this.db.prepare(
+  create(coupon_id, position) {
+    return this.db.prepare(
       `
-      UPDATE coupon_cells
-      SET is_filled = 1
-      WHERE id = ?
-    `
-    ).run(id);
-  }
-  deleteByCouponId(coupon_id) {
-    this.db.prepare(
+        INSERT INTO coupon_cells (coupon_id, position, stamp_id)
+        VALUES (?, ?, NULL)
       `
-      DELETE FROM coupon_cells WHERE coupon_id = ?
-    `
-    ).run(coupon_id);
+    ).run(coupon_id, position);
+  }
+  setStamp(cell_id, stamp_id) {
+    return this.db.prepare(
+      `
+        UPDATE coupon_cells
+        SET stamp_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `
+    ).run(stamp_id, cell_id);
+  }
+  clearStamp(cell_id) {
+    return this.db.prepare(
+      `
+        UPDATE coupon_cells
+        SET stamp_id = NULL, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `
+    ).run(cell_id);
   }
   delete(id) {
-    this.db.prepare(
-      `
-      DELETE FROM coupon_cells WHERE id = ?
-    `
-    ).run(id);
+    return this.db.prepare(`DELETE FROM coupon_cells WHERE id = ?`).run(id);
   }
 }
 class TagsRepository {
@@ -239,22 +249,54 @@ app.whenReady().then(() => {
   ipcMain.handle("coupons:getAll", () => couponsRepo.getAll());
   ipcMain.handle(
     "coupons:create",
-    (e, title, cell_count, code, image) => couponsRepo.create(title, cell_count, code, image)
+    (_e, title, cell_count, access_code, image_path) => {
+      const coupon = couponsRepo.create(
+        title,
+        cell_count,
+        access_code,
+        image_path
+      );
+      for (let i = 0; i < cell_count; i++) {
+        couponCellsRepo.create(coupon.id, i);
+      }
+      return coupon;
+    }
   );
   ipcMain.handle("stamps:getAll", () => stampsRepo.getAll());
   ipcMain.handle("tags:getAll", () => tagsRepo.getAll());
   ipcMain.handle(
     "couponCells:getByCouponId",
-    (e, id) => couponCellsRepo.getByCouponId(id)
+    (_e, id) => couponCellsRepo.getByCouponId(id)
   );
   ipcMain.handle(
     "coupons:update",
-    (e, id, title, cell_count) => couponsRepo.update(id, title, cell_count)
+    (_e, id, title, cell_count) => couponsRepo.update(id, title, cell_count)
   );
-  ipcMain.handle("coupons:delete", (e, id) => couponsRepo.delete(id));
+  ipcMain.handle("coupons:delete", (_e, id) => couponsRepo.delete(id));
   ipcMain.handle(
     "couponCells:create",
-    (e, coupon_id, index) => couponCellsRepo.create(coupon_id, index)
+    (_e, coupon_id, index) => couponCellsRepo.create(coupon_id, index)
+  );
+  ipcMain.handle(
+    "couponCells:setStamp",
+    (_e, cell_id, stamp_id) => couponCellsRepo.setStamp(cell_id, stamp_id)
+  );
+  ipcMain.handle(
+    "couponCells:clearStamp",
+    (_e, cell_id) => couponCellsRepo.clearStamp(cell_id)
+  );
+  ipcMain.handle("couponCells:delete", (_e, id) => couponCellsRepo.delete(id));
+  ipcMain.handle(
+    "coupons:updateStatus",
+    (_e, id, status) => couponsRepo.updateStatus(id, status)
+  );
+  ipcMain.handle("coupons:use", (_e, id) => {
+    couponsRepo.delete(id);
+    return { success: true };
+  });
+  ipcMain.handle(
+    "coupons:verifyAccess",
+    (_e, id, code) => couponsRepo.verifyAccess(id, code)
   );
   createWindow();
 });
